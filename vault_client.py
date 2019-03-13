@@ -1,7 +1,14 @@
 import os
 import hvac
 
-client = hvac.Client(url=f'http://{os.environ["VAULT_ADDR"]}:8200', token=os.environ['VAULT_TOKEN'])
+
+client = hvac.Client(url=f'http://{os.environ["VAULT_ADDR"]}:8200')
+
+if os.environ.get('VAULT_TOKEN'):
+    client.token = os.environ['VAULT_TOKEN']
+elif os.environ.get('GITHUB_TOKEN'):
+    client.auth.github.login(token=os.environ['GITHUB_TOKEN'])
+
 service: str = os.environ["service_name"]
 environ: str = os.environ["service_environment"]
 
@@ -11,6 +18,7 @@ class Settings:
         self.client = vault_client
         self.service = service_name
         self.environ = environ_name
+        self.database_cred = None
 
     def __getattr__(self, item):
         try:
@@ -25,12 +33,13 @@ class Settings:
 
     def get_database_cred(self):
         try:
-            database_cred = self.client.read(f"database/creds/entry-{self.environ}")
-            password, username = database_cred
+            if not self.database_cred:
+                self.database_cred = self.client.read(f"database/creds/{self.service}-{self.environ}")["data"].values()
+            password, username = self.database_cred
         except Exception as e:
             raise e
 
-        return database_cred
+        return password, username
 
 
 settings = Settings(client, service, environ)
